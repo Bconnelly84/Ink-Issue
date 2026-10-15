@@ -16,7 +16,8 @@
     "expo-sqlite": "~15.2.0",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
-    "react-native": "0.79.2"
+    "react-native": "0.79.2",
+    "@supabase/supabase-js": "^2.57.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2"
