@@ -4,6 +4,7 @@ import {
   StatusBar, StyleSheet, Text, TextInput, View
 } from "react-native";
 import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
+import { supabase } from "./src/lib/supabase";
 
 const COLORS = {
   bg: "#0B0D12", panel: "#151923", panel2: "#1D2430",
@@ -133,6 +134,84 @@ function Cover({ uri, title, large = false }) {
   );
 }
 
+async function syncRemoteCatalogToLocal(db) {
+  // Pull the public catalog from Supabase. If the cloud catalog is empty or
+  // unreachable, the app keeps using its local starter catalog.
+  const [publishersResult, seriesResult, issuesResult, variantsResult] = await Promise.all([
+    supabase.from("publishers").select("id,name"),
+    supabase.from("series").select("id,publisher_id,title,volume_label,start_year"),
+    supabase.from("issues").select("id,series_id,issue_number,issue_title,cover_date,release_date,plot_summary,summary_source,summary_source_url"),
+    supabase.from("variants").select("id,issue_id,cover_label,cover_artist,variant_type,incentive_ratio,image_url,image_source_url,image_attribution,image_status")
+  ]);
+
+  // RLS/network errors should not prevent the local app from opening.
+  if (publishersResult.error || seriesResult.error || issuesResult.error || variantsResult.error) {
+    console.warn("Supabase catalog unavailable; using local catalog.",
+      publishersResult.error || seriesResult.error || issuesResult.error || variantsResult.error);
+    return false;
+  }
+
+  const publishers = publishersResult.data || [];
+  const series = seriesResult.data || [];
+  const issues = issuesResult.data || [];
+  const variants = variantsResult.data || [];
+  if (issues.length === 0 || publishers.length === 0 || series.length === 0) return false;
+
+  // Merge cloud catalog rows into SQLite without deleting records referenced by
+  // a user's local collection. Remove untouched demo rows only when none are owned.
+  await db.withTransactionAsync(async () => {
+    const demoOwned = await db.getFirstAsync(`
+      SELECT COUNT(*) AS n FROM collection_items
+      WHERE variant_id IN (SELECT id FROM catalog_variants WHERE id LIKE 'demo-%')
+    `);
+    if (!demoOwned || demoOwned.n === 0) {
+      await db.runAsync("DELETE FROM catalog_variants WHERE id LIKE 'demo-%'");
+      await db.runAsync("DELETE FROM catalog_issues WHERE id LIKE 'demo-%'");
+      await db.runAsync("DELETE FROM catalog_series WHERE id LIKE 'demo-%'");
+      await db.runAsync("DELETE FROM catalog_publishers WHERE id LIKE 'demo-%'");
+    }
+    for (const row of publishers) {
+      await db.runAsync(
+        `INSERT INTO catalog_publishers (id,name) VALUES (?,?)
+         ON CONFLICT(id) DO UPDATE SET name=excluded.name`, row.id, row.name
+      );
+    }
+    for (const row of series) {
+      await db.runAsync(
+        `INSERT INTO catalog_series (id,publisher_id,title,volume,start_year) VALUES (?,?,?,?,?)
+         ON CONFLICT(id) DO UPDATE SET publisher_id=excluded.publisher_id,title=excluded.title,
+           volume=excluded.volume,start_year=excluded.start_year`,
+        row.id, row.publisher_id, row.title, row.volume_label || null, row.start_year || null
+      );
+    }
+    for (const row of issues) {
+      await db.runAsync(
+        `INSERT INTO catalog_issues (id,series_id,issue_number,title,cover_date,release_date,synopsis,source_name,source_url)
+         VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+         series_id=excluded.series_id,issue_number=excluded.issue_number,title=excluded.title,
+         cover_date=excluded.cover_date,release_date=excluded.release_date,synopsis=excluded.synopsis,
+         source_name=excluded.source_name,source_url=excluded.source_url`,
+        row.id, row.series_id, row.issue_number, row.issue_title || null,
+        row.cover_date || null, row.release_date || null, row.plot_summary || null,
+        row.summary_source || null, row.summary_source_url || null
+      );
+    }
+    for (const row of variants) {
+      await db.runAsync(
+        `INSERT INTO catalog_variants (id,issue_id,cover_label,cover_artist,variant_type,incentive_ratio,image_url,image_source_url,image_attribution,image_status)
+         VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+         issue_id=excluded.issue_id,cover_label=excluded.cover_label,cover_artist=excluded.cover_artist,
+         variant_type=excluded.variant_type,incentive_ratio=excluded.incentive_ratio,image_url=excluded.image_url,
+         image_source_url=excluded.image_source_url,image_attribution=excluded.image_attribution,image_status=excluded.image_status`,
+        row.id, row.issue_id, row.cover_label || null, row.cover_artist || null,
+        row.variant_type || null, row.incentive_ratio || null, row.image_url || null,
+        row.image_source_url || null, row.image_attribution || null, row.image_status || "missing"
+      );
+    }
+  });
+  return true;
+}
+
 function AppShell() {
   const db = useSQLiteContext();
   const [tab, setTab] = useState("Catalog");
@@ -143,10 +222,16 @@ function AppShell() {
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [variants, setVariants] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [catalogMode, setCatalogMode] = useState("Checking cloud");
 
   async function refresh() {
     setLoading(true);
     try {
+      const remoteLoaded = await syncRemoteCatalogToLocal(db).catch(error => {
+        console.warn("Supabase catalog sync failed; using local catalog.", error);
+        return false;
+      });
+      setCatalogMode(remoteLoaded ? "CLOUD CATALOG" : "LOCAL CATALOG");
       const found = await db.getAllAsync(`
         SELECT i.*, s.title AS series_title, s.start_year,
                p.name AS publisher_name,
@@ -242,10 +327,10 @@ function AppShell() {
     return (
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>YOUR COMIC UNIVERSE</Text>
-          <Text style={styles.brand}>PANEL <Text style={{ color: COLORS.accent }}>BY PANEL</Text></Text>
+          <Text style={styles.eyebrow}>EVERY ISSUE. EVERY COVER. EVERY ERA.</Text>
+          <Text style={styles.brand}>INK <Text style={{ color: COLORS.accent }}>& ISSUE</Text></Text>
         </View>
-        <View style={styles.onlinePill}><View style={styles.onlineDot}/><Text style={styles.onlineText}>LOCAL MODE</Text></View>
+        <View style={styles.onlinePill}><View style={styles.onlineDot}/><Text style={styles.onlineText}>{catalogMode}</Text></View>
       </View>
     );
   }
@@ -279,14 +364,14 @@ function AppShell() {
           onChangeText={setQuery}
           autoCapitalize="none"
         />
-        <Text style={styles.sectionLabel}>{filteredIssues.length} ISSUE{filteredIssues.length === 1 ? "" : "S"} IN THIS SAMPLE CATALOG</Text>
+        <Text style={styles.sectionLabel}>{filteredIssues.length} ISSUE{filteredIssues.length === 1 ? "" : "S"} IN CATALOG</Text>
         {loading ? <ActivityIndicator color={COLORS.accent} style={{ marginTop: 30 }} /> :
           <FlatList
             data={filteredIssues}
             keyExtractor={x => x.id}
             renderItem={({ item }) => <IssueCard item={item} />}
             contentContainerStyle={{ paddingBottom: 28 }}
-            ListEmptyComponent={<Text style={styles.empty}>No matching issues. Later versions will connect the licensed cloud catalog.</Text>}
+            ListEmptyComponent={<Text style={styles.empty}>No matching issues yet. The catalog will populate as verified records are added.</Text>}
           />
         }
       </>
@@ -359,7 +444,7 @@ function AppShell() {
           >
             <Text style={styles.primaryButtonText}>Add selected cover to collection</Text>
           </Pressable>
-          <Text style={styles.disclaimer}>Demo catalog only. Real plot summaries and cover images will be populated from sources approved for reuse.</Text>
+          <Text style={styles.disclaimer}>Catalog records and cover images must be sourced from providers that permit their use. Missing cover images will appear as placeholders.</Text>
         </ScrollView>
       </View>
     );
