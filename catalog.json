@@ -1,0 +1,54 @@
+{
+  "notice": "Fictional demonstration records only. Do not treat as real comics or published issue data.",
+  "publishers": [
+    {
+      "id": "demo-pub-1",
+      "name": "Sample Publisher"
+    }
+  ],
+  "series": [
+    {
+      "id": "demo-series-1",
+      "publisher_id": "demo-pub-1",
+      "title": "The Midnight Signal (Demo)",
+      "volume": "Volume 1",
+      "start_year": 2025
+    }
+  ],
+  "issues": [
+    {
+      "id": "demo-issue-1",
+      "series_id": "demo-series-1",
+      "issue_number": "1",
+      "title": "The First Transmission",
+      "cover_date": "2025-01",
+      "release_date": "2025-01-15",
+      "synopsis": "DEMO SYNOPSIS: A strange transmission reaches a small town after midnight. One amateur radio operator follows the signal and discovers that its source may be closer than anyone expects. This placeholder story is fictional and is not a real published comic.",
+      "source_name": "In-app demo data"
+    }
+  ],
+  "variants": [
+    {
+      "id": "demo-variant-a",
+      "issue_id": "demo-issue-1",
+      "cover_label": "A",
+      "cover_artist": "Demo Artist",
+      "variant_type": "Standard",
+      "image_url": null,
+      "image_source_url": null,
+      "image_attribution": null,
+      "image_status": "missing"
+    },
+    {
+      "id": "demo-variant-b",
+      "issue_id": "demo-issue-1",
+      "cover_label": "B",
+      "cover_artist": "Demo Artist",
+      "variant_type": "Variant",
+      "image_url": null,
+      "image_source_url": null,
+      "image_attribution": null,
+      "image_status": "missing"
+    }
+  ]
+}

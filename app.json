@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Ink & Issue",
+    "slug": "ink-and-issue",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B0D12"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.inkandissue.app"
+    },
+    "android": {
+      "package": "com.inkandissue.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0D12"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
